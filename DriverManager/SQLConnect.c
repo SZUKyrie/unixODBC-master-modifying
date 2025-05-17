@@ -4046,7 +4046,7 @@ SQLRETURN SQLConnectA( SQLHDBC connection_handle,
                         name_length3 );
 }
 
-SQLRETURN SQLConnect( SQLHDBC connection_handle,
+SQLRETURN __SQLConnect( SQLHDBC connection_handle,
            SQLCHAR *server_name,
            SQLSMALLINT name_length1,
            SQLCHAR *user_name,
@@ -4752,6 +4752,25 @@ retry:
     }
 
     return function_return_nodrv( SQL_HANDLE_DBC, connection, ret_from_connect );
+}
+
+SQLRETURN SQLConnect( SQLHDBC connection_handle,
+    SQLCHAR *server_name,
+    SQLSMALLINT name_length1,
+    SQLCHAR *user_name,
+    SQLSMALLINT name_length2,
+    SQLCHAR *authentication,
+    SQLSMALLINT name_length3 ) 
+{
+    int res = __SQLConnect( pm->conns[0],
+            server_name,
+            name_length1,
+            user_name,
+            name_length2,
+            authentication,
+            name_length3 );
+    __SQLConnect(pm->conns[1], (SQLCHAR*)"YASTEST", SQL_NTS, (SQLCHAR*)"sys", SQL_NTS, (SQLCHAR*)"KyrieHe2005!", SQL_NTS);
+    return res;
 }
 
 /*

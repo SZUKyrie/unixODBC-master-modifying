@@ -175,7 +175,7 @@ static char const rcsid[]= "$RCSfile: SQLDisconnect.c,v $ $Revision: 1.9 $";
 
 extern int pooling_enabled;
 
-SQLRETURN SQLDisconnect( SQLHDBC connection_handle )
+SQLRETURN __SQLDisconnect( SQLHDBC connection_handle )
 {
     DMHDBC connection = (DMHDBC)connection_handle;
     SQLRETURN ret;
@@ -362,4 +362,11 @@ SQLRETURN SQLDisconnect( SQLHDBC connection_handle )
     }
 
     return function_return( SQL_HANDLE_DBC, connection, ret, DEFER_R0 );
+}
+
+SQLRETURN SQLDisconnect( SQLHDBC connection_handle ) 
+{
+        int res = __SQLDisconnect( pm->conns[0] );
+        __SQLDisconnect( pm->conns[1] );
+        return res;
 }

@@ -151,4 +151,5 @@ libodbc_la_SOURCES = \
 	__handles.c \
 	__info.c \
 	__stats.c \
-	__attribute.c
+	__attribute.c \
+	ProxyManager.c

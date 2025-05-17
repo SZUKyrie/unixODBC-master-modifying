@@ -1817,4 +1817,15 @@ int add_to_pool( DMHDBC connection, CPOOLHEAD *pooh );
                                     con->functions[78].func)\
                                         (typ,han)
 
+typedef struct ProxyManager
+{
+  DMHDBC* conns;
+  DMHSTMT* stmts;
+  int size;
+}ProxyManager;
+
+extern ProxyManager* pm;
+
+void InitPM();
+
 #endif

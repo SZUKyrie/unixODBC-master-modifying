@@ -172,357 +172,370 @@
 #include <config.h>
 #include "drivermanager.h"
 
-static char const rcsid[]= "$RCSfile: SQLExecDirect.c,v $ $Revision: 1.11 $";
+static char const rcsid[] = "$RCSfile: SQLExecDirect.c,v $ $Revision: 1.11 $";
 
-SQLRETURN SQLExecDirectA( SQLHSTMT statement_handle,
-           SQLCHAR *statement_text,
-           SQLINTEGER text_length )
+SQLRETURN SQLExecDirectA(SQLHSTMT statement_handle,
+                         SQLCHAR *statement_text,
+                         SQLINTEGER text_length)
 {
-    return SQLExecDirect( statement_handle,
-                            statement_text,
-                            text_length );
+        return SQLExecDirect(statement_handle,
+                             statement_text,
+                             text_length);
 }
 
-SQLRETURN SQLExecDirect( SQLHSTMT statement_handle,
-           SQLCHAR *statement_text,
-           SQLINTEGER text_length )
+SQLRETURN __SQLExecDirect(SQLHSTMT statement_handle,
+                          SQLCHAR *statement_text,
+                          SQLINTEGER text_length)
 {
-    DMHSTMT statement = (DMHSTMT) statement_handle;
-    SQLRETURN ret;
-    SQLCHAR *s1;
-    SQLCHAR s2[ 100 + LOG_MESSAGE_LEN ];
+        DMHSTMT statement = (DMHSTMT)statement_handle;
+        SQLRETURN ret;
+        SQLCHAR *s1;
+        SQLCHAR s2[100 + LOG_MESSAGE_LEN];
 
-    /*
-     * check statement
-     */
-
-    if ( !__validate_stmt( statement ))
-    {
-        dm_log_write( __FILE__, 
-                    __LINE__, 
-                    LOG_INFO, 
-                    LOG_INFO, 
-                    "Error: SQL_INVALID_HANDLE" );
-
-        return SQL_INVALID_HANDLE;
-    }
-
-    function_entry( statement );
-
-    if ( log_info.log_flag )
-    {
         /*
-         * allocate some space for the buffer
+         * check statement
          */
 
-        if ( statement_text && text_length == SQL_NTS )
+        if (!__validate_stmt(statement))
         {
-            s1 = malloc( strlen((char*) statement_text ) + LOG_MESSAGE_LEN );
-        }
-        else if ( statement_text )
-        {
-            s1 = malloc( text_length + LOG_MESSAGE_LEN );
-        }
-        else
-        {
-            s1 = malloc( LOG_MESSAGE_LEN );
+                dm_log_write(__FILE__,
+                             __LINE__,
+                             LOG_INFO,
+                             LOG_INFO,
+                             "Error: SQL_INVALID_HANDLE");
+
+                return SQL_INVALID_HANDLE;
         }
 
-        sprintf( statement -> msg, "\n\t\tEntry:\
+        function_entry(statement);
+
+        if (log_info.log_flag)
+        {
+                /*
+                 * allocate some space for the buffer
+                 */
+
+                if (statement_text && text_length == SQL_NTS)
+                {
+                        s1 = malloc(strlen((char *)statement_text) + LOG_MESSAGE_LEN);
+                }
+                else if (statement_text)
+                {
+                        s1 = malloc(text_length + LOG_MESSAGE_LEN);
+                }
+                else
+                {
+                        s1 = malloc(LOG_MESSAGE_LEN);
+                }
+
+                sprintf(statement->msg, "\n\t\tEntry:\
 \n\t\t\tStatement = %p\
 \n\t\t\tSQL = %s",
-                statement,
-                __string_with_length( s1, statement_text, text_length ));
+                        statement,
+                        __string_with_length(s1, statement_text, text_length));
 
-        free( s1 );
+                free(s1);
 
-        dm_log_write( __FILE__, 
-                __LINE__, 
-                LOG_INFO, 
-                LOG_INFO, 
-                statement -> msg );
-    }
-
-    thread_protect( SQL_HANDLE_STMT, statement );
-
-    if ( !statement_text )
-    {
-        dm_log_write( __FILE__, 
-                __LINE__, 
-                LOG_INFO, 
-                LOG_INFO, 
-                "Error: HY009" );
-
-        __post_internal_error( &statement -> error,
-                ERROR_HY009, NULL,
-                statement -> connection -> environment -> requested_version );
-
-        return function_return_nodrv( SQL_HANDLE_STMT, statement, SQL_ERROR );
-    }
-
-    if ( text_length <= 0 && text_length != SQL_NTS )
-    {
-        dm_log_write( __FILE__, 
-                __LINE__, 
-                LOG_INFO, 
-                LOG_INFO, 
-                "Error: HY090" );
-
-        __post_internal_error( &statement -> error,
-                ERROR_HY090, NULL,
-                statement -> connection -> environment -> requested_version );
-
-        return function_return_nodrv( SQL_HANDLE_STMT, statement, SQL_ERROR );
-    }
-
-    /*
-     * check states
-     */
-
-#ifdef NR_PROBE
-    if ( statement -> state == STATE_S5 ||
-            statement -> state == STATE_S6 ||
-            statement -> state == STATE_S7 )
-#else
-    if (( statement -> state == STATE_S6 && statement -> eod == 0 ) ||
-            statement -> state == STATE_S7 )
-#endif
-    {
-        dm_log_write( __FILE__, 
-                __LINE__, 
-                LOG_INFO, 
-                LOG_INFO, 
-                "Error: 24000" );
-
-        __post_internal_error( &statement -> error,
-                ERROR_24000, NULL,
-                statement -> connection -> environment -> requested_version );
-
-        return function_return_nodrv( SQL_HANDLE_STMT, statement, SQL_ERROR );
-    }
-    else if ( statement -> state == STATE_S8 ||
-            statement -> state == STATE_S9 ||
-            statement -> state == STATE_S10 ||
-            statement -> state == STATE_S13 ||
-            statement -> state == STATE_S14 ||
-            statement -> state == STATE_S15 )
-    {
-        dm_log_write( __FILE__, 
-                __LINE__, 
-                LOG_INFO, 
-                LOG_INFO, 
-                "Error: HY010" );
-
-        __post_internal_error( &statement -> error,
-                ERROR_HY010, NULL,
-                statement -> connection -> environment -> requested_version );
-
-        return function_return_nodrv( SQL_HANDLE_STMT, statement, SQL_ERROR );
-    }
-
-    if ( statement -> state == STATE_S11 ||
-            statement -> state == STATE_S12 )
-    {
-        if ( statement -> interupted_func != SQL_API_SQLEXECDIRECT )
-        {
-            dm_log_write( __FILE__, 
-                    __LINE__, 
-                    LOG_INFO, 
-                    LOG_INFO, 
-                    "Error: HY010" );
-
-            __post_internal_error( &statement -> error,
-                    ERROR_HY010, NULL,
-                    statement -> connection -> environment -> requested_version );
-
-            return function_return_nodrv( SQL_HANDLE_STMT, statement, SQL_ERROR );
+                dm_log_write(__FILE__,
+                             __LINE__,
+                             LOG_INFO,
+                             LOG_INFO,
+                             statement->msg);
         }
-    }
 
-    if ( statement -> connection -> unicode_driver )
-    {
-        SQLWCHAR *s1;
-        int wlen;
+        thread_protect(SQL_HANDLE_STMT, statement);
 
-#ifdef NR_PROBE
-        if ( !CHECK_SQLEXECDIRECTW( statement -> connection ) ||
-                !CHECK_SQLNUMRESULTCOLS( statement -> connection ))
+        if (!statement_text)
         {
-            dm_log_write( __FILE__, 
-                    __LINE__, 
-                    LOG_INFO, 
-                    LOG_INFO, 
-                    "Error: IM001" );
+                dm_log_write(__FILE__,
+                             __LINE__,
+                             LOG_INFO,
+                             LOG_INFO,
+                             "Error: HY009");
 
-            __post_internal_error( &statement -> error,
-                    ERROR_IM001, NULL,
-                    statement -> connection -> environment -> requested_version );
+                __post_internal_error(&statement->error,
+                                      ERROR_HY009, NULL,
+                                      statement->connection->environment->requested_version);
 
-            return function_return_nodrv( SQL_HANDLE_STMT, statement, SQL_ERROR );
+                return function_return_nodrv(SQL_HANDLE_STMT, statement, SQL_ERROR);
         }
-#else
-        if ( !CHECK_SQLEXECDIRECTW( statement -> connection ))
+
+        if (text_length <= 0 && text_length != SQL_NTS)
         {
-            dm_log_write( __FILE__, 
-                    __LINE__, 
-                    LOG_INFO, 
-                    LOG_INFO, 
-                    "Error: IM001" );
+                dm_log_write(__FILE__,
+                             __LINE__,
+                             LOG_INFO,
+                             LOG_INFO,
+                             "Error: HY090");
 
-            __post_internal_error( &statement -> error,
-                    ERROR_IM001, NULL,
-                    statement -> connection -> environment -> requested_version );
+                __post_internal_error(&statement->error,
+                                      ERROR_HY090, NULL,
+                                      statement->connection->environment->requested_version);
 
-            return function_return_nodrv( SQL_HANDLE_STMT, statement, SQL_ERROR );
+                return function_return_nodrv(SQL_HANDLE_STMT, statement, SQL_ERROR);
         }
-#endif
 
-        s1 = ansi_to_unicode_alloc( statement_text, text_length, statement -> connection, &wlen );
-
-        text_length = wlen;
-
-        ret = SQLEXECDIRECTW( statement -> connection,
-                statement -> driver_stmt,
-                s1,
-                text_length );
-
-        if ( s1 )
-            free( s1 );
-    }
-    else
-    {
-#ifdef NR_PROBE
-        if ( !CHECK_SQLEXECDIRECT( statement -> connection ) ||
-                !CHECK_SQLNUMRESULTCOLS( statement -> connection ))
-        {
-            dm_log_write( __FILE__, 
-                    __LINE__, 
-                    LOG_INFO, 
-                    LOG_INFO, 
-                    "Error: IM001" );
-
-            __post_internal_error( &statement -> error,
-                    ERROR_IM001, NULL,
-                    statement -> connection -> environment -> requested_version );
-
-            return function_return_nodrv( SQL_HANDLE_STMT, statement, SQL_ERROR );
-        }
-#else
-        if ( !CHECK_SQLEXECDIRECT( statement -> connection ))
-        {
-            dm_log_write( __FILE__, 
-                    __LINE__, 
-                    LOG_INFO, 
-                    LOG_INFO, 
-                    "Error: IM001" );
-
-            __post_internal_error( &statement -> error,
-                    ERROR_IM001, NULL,
-                    statement -> connection -> environment -> requested_version );
-
-            return function_return_nodrv( SQL_HANDLE_STMT, statement, SQL_ERROR );
-        }
-#endif
-
-        ret = SQLEXECDIRECT( statement -> connection,
-                statement -> driver_stmt,
-                statement_text,
-                text_length );
-    }
-
-    if ( SQL_SUCCEEDED( ret ))
-    {
-#ifdef NR_PROBE
-        SQLRETURN local_ret;
-  
         /*
-         * grab any errors
+         * check states
          */
 
-        if ( ret == SQL_SUCCESS_WITH_INFO )
+#ifdef NR_PROBE
+        if (statement->state == STATE_S5 ||
+            statement->state == STATE_S6 ||
+            statement->state == STATE_S7)
+#else
+        if ((statement->state == STATE_S6 && statement->eod == 0) ||
+            statement->state == STATE_S7)
+#endif
         {
-            function_return_ex( IGNORE_THREAD, statement, ret, TRUE, DEFER_R1 );
+                dm_log_write(__FILE__,
+                             __LINE__,
+                             LOG_INFO,
+                             LOG_INFO,
+                             "Error: 24000");
+
+                __post_internal_error(&statement->error,
+                                      ERROR_24000, NULL,
+                                      statement->connection->environment->requested_version);
+
+                return function_return_nodrv(SQL_HANDLE_STMT, statement, SQL_ERROR);
+        }
+        else if (statement->state == STATE_S8 ||
+                 statement->state == STATE_S9 ||
+                 statement->state == STATE_S10 ||
+                 statement->state == STATE_S13 ||
+                 statement->state == STATE_S14 ||
+                 statement->state == STATE_S15)
+        {
+                dm_log_write(__FILE__,
+                             __LINE__,
+                             LOG_INFO,
+                             LOG_INFO,
+                             "Error: HY010");
+
+                __post_internal_error(&statement->error,
+                                      ERROR_HY010, NULL,
+                                      statement->connection->environment->requested_version);
+
+                return function_return_nodrv(SQL_HANDLE_STMT, statement, SQL_ERROR);
         }
 
-        local_ret = SQLNUMRESULTCOLS( statement -> connection,
-                statement -> driver_stmt, &statement -> numcols );
-
-        if ( statement -> numcols > 0 )
+        if (statement->state == STATE_S11 ||
+            statement->state == STATE_S12)
         {
-            statement -> state = STATE_S5;
+                if (statement->interupted_func != SQL_API_SQLEXECDIRECT)
+                {
+                        dm_log_write(__FILE__,
+                                     __LINE__,
+                                     LOG_INFO,
+                                     LOG_INFO,
+                                     "Error: HY010");
+
+                        __post_internal_error(&statement->error,
+                                              ERROR_HY010, NULL,
+                                              statement->connection->environment->requested_version);
+
+                        return function_return_nodrv(SQL_HANDLE_STMT, statement, SQL_ERROR);
+                }
+        }
+
+        if (statement->connection->unicode_driver)
+        {
+                SQLWCHAR *s1;
+                int wlen;
+
+#ifdef NR_PROBE
+                if (!CHECK_SQLEXECDIRECTW(statement->connection) ||
+                    !CHECK_SQLNUMRESULTCOLS(statement->connection))
+                {
+                        dm_log_write(__FILE__,
+                                     __LINE__,
+                                     LOG_INFO,
+                                     LOG_INFO,
+                                     "Error: IM001");
+
+                        __post_internal_error(&statement->error,
+                                              ERROR_IM001, NULL,
+                                              statement->connection->environment->requested_version);
+
+                        return function_return_nodrv(SQL_HANDLE_STMT, statement, SQL_ERROR);
+                }
+#else
+                if (!CHECK_SQLEXECDIRECTW(statement->connection))
+                {
+                        dm_log_write(__FILE__,
+                                     __LINE__,
+                                     LOG_INFO,
+                                     LOG_INFO,
+                                     "Error: IM001");
+
+                        __post_internal_error(&statement->error,
+                                              ERROR_IM001, NULL,
+                                              statement->connection->environment->requested_version);
+
+                        return function_return_nodrv(SQL_HANDLE_STMT, statement, SQL_ERROR);
+                }
+#endif
+
+                s1 = ansi_to_unicode_alloc(statement_text, text_length, statement->connection, &wlen);
+
+                text_length = wlen;
+
+                ret = SQLEXECDIRECTW(statement->connection,
+                                     statement->driver_stmt,
+                                     s1,
+                                     text_length);
+
+                if (s1)
+                        free(s1);
         }
         else
         {
-            statement -> state = STATE_S4;
-        }
+#ifdef NR_PROBE
+                if (!CHECK_SQLEXECDIRECT(statement->connection) ||
+                    !CHECK_SQLNUMRESULTCOLS(statement->connection))
+                {
+                        dm_log_write(__FILE__,
+                                     __LINE__,
+                                     LOG_INFO,
+                                     LOG_INFO,
+                                     "Error: IM001");
+
+                        __post_internal_error(&statement->error,
+                                              ERROR_IM001, NULL,
+                                              statement->connection->environment->requested_version);
+
+                        return function_return_nodrv(SQL_HANDLE_STMT, statement, SQL_ERROR);
+                }
 #else
-        /*
-         * We don't know for sure
-         */
-        statement -> hascols = 1;
-        statement -> state = STATE_S5;
+                if (!CHECK_SQLEXECDIRECT(statement->connection))
+                {
+                        dm_log_write(__FILE__,
+                                     __LINE__,
+                                     LOG_INFO,
+                                     LOG_INFO,
+                                     "Error: IM001");
+
+                        __post_internal_error(&statement->error,
+                                              ERROR_IM001, NULL,
+                                              statement->connection->environment->requested_version);
+
+                        return function_return_nodrv(SQL_HANDLE_STMT, statement, SQL_ERROR);
+                }
 #endif
 
-        statement -> prepared = 0;
+                ret = SQLEXECDIRECT(statement->connection,
+                                    statement->driver_stmt,
+                                    statement_text,
+                                    text_length);
+        }
 
-        /*
-         * there is a issue here with transactions, but for the
-         * moment
-         *
-        statement -> connection -> state = STATE_C6;
-         */
-    }
-    else if ( ret == SQL_NO_DATA )
-    {
-        statement -> state = STATE_S4;
-        statement -> prepared = 0;
-    }
-    else if ( ret == SQL_NEED_DATA )
-    {
-        statement -> interupted_func = SQL_API_SQLEXECDIRECT;
-        statement -> interupted_state = statement -> state;
-        statement -> state = STATE_S8;
+        if (SQL_SUCCEEDED(ret))
+        {
+#ifdef NR_PROBE
+                SQLRETURN local_ret;
 
-        statement -> prepared = 0;
-    }
-    else if ( ret == SQL_PARAM_DATA_AVAILABLE )
-    {
-        statement -> interupted_func = SQL_API_SQLEXECDIRECT;
-        statement -> interupted_state = statement -> state;
-        statement -> state = STATE_S13;
-    }
-    else if ( ret == SQL_STILL_EXECUTING )
-    {
-        statement -> interupted_func = SQL_API_SQLEXECDIRECT;
-        if ( statement -> state != STATE_S11 &&
-                statement -> state != STATE_S12 )
-            statement -> state = STATE_S11;
+                /*
+                 * grab any errors
+                 */
 
-        statement -> prepared = 0;
-    }
-    else if (( statement -> state >= STATE_S2 && statement -> state <= STATE_S4 ) ||
-              ( statement -> state >= STATE_S11 && statement -> state <= STATE_S12 &&
-              statement -> interupted_state >= STATE_S2 && statement -> interupted_state <= STATE_S4 ))
-    {
-        statement -> state = STATE_S1;
-    }
-    else if ( statement -> state >= STATE_S11 && statement -> state <= STATE_S12 )
-    {
-        statement -> state = statement -> interupted_state;
-    }
+                if (ret == SQL_SUCCESS_WITH_INFO)
+                {
+                        function_return_ex(IGNORE_THREAD, statement, ret, TRUE, DEFER_R1);
+                }
 
-    if ( log_info.log_flag )
-    {
-        sprintf( statement -> msg, 
-                "\n\t\tExit:[%s]",
-                    __get_return_status( ret, s2 ));
+                local_ret = SQLNUMRESULTCOLS(statement->connection,
+                                             statement->driver_stmt, &statement->numcols);
 
-        dm_log_write( __FILE__, 
-                __LINE__, 
-                LOG_INFO, 
-                LOG_INFO, 
-                statement -> msg );
-    }
+                if (statement->numcols > 0)
+                {
+                        statement->state = STATE_S5;
+                }
+                else
+                {
+                        statement->state = STATE_S4;
+                }
+#else
+                /*
+                 * We don't know for sure
+                 */
+                statement->hascols = 1;
+                statement->state = STATE_S5;
+#endif
 
-    return function_return( SQL_HANDLE_STMT, statement, ret, DEFER_R1 );
+                statement->prepared = 0;
+
+                /*
+                 * there is a issue here with transactions, but for the
+                 * moment
+                 *
+                statement -> connection -> state = STATE_C6;
+                 */
+        }
+        else if (ret == SQL_NO_DATA)
+        {
+                statement->state = STATE_S4;
+                statement->prepared = 0;
+        }
+        else if (ret == SQL_NEED_DATA)
+        {
+                statement->interupted_func = SQL_API_SQLEXECDIRECT;
+                statement->interupted_state = statement->state;
+                statement->state = STATE_S8;
+
+                statement->prepared = 0;
+        }
+        else if (ret == SQL_PARAM_DATA_AVAILABLE)
+        {
+                statement->interupted_func = SQL_API_SQLEXECDIRECT;
+                statement->interupted_state = statement->state;
+                statement->state = STATE_S13;
+        }
+        else if (ret == SQL_STILL_EXECUTING)
+        {
+                statement->interupted_func = SQL_API_SQLEXECDIRECT;
+                if (statement->state != STATE_S11 &&
+                    statement->state != STATE_S12)
+                        statement->state = STATE_S11;
+
+                statement->prepared = 0;
+        }
+        else if ((statement->state >= STATE_S2 && statement->state <= STATE_S4) ||
+                 (statement->state >= STATE_S11 && statement->state <= STATE_S12 &&
+                  statement->interupted_state >= STATE_S2 && statement->interupted_state <= STATE_S4))
+        {
+                statement->state = STATE_S1;
+        }
+        else if (statement->state >= STATE_S11 && statement->state <= STATE_S12)
+        {
+                statement->state = statement->interupted_state;
+        }
+
+        if (log_info.log_flag)
+        {
+                sprintf(statement->msg,
+                        "\n\t\tExit:[%s]",
+                        __get_return_status(ret, s2));
+
+                dm_log_write(__FILE__,
+                             __LINE__,
+                             LOG_INFO,
+                             LOG_INFO,
+                             statement->msg);
+        }
+
+        return function_return(SQL_HANDLE_STMT, statement, ret, DEFER_R1);
+}
+
+SQLRETURN SQLExecDirect(SQLHSTMT statement_handle,
+                        SQLCHAR *statement_text,
+                        SQLINTEGER text_length)
+{
+        int res = __SQLExecDirect(pm->stmts[0],
+                                  statement_text,
+                                  text_length);
+        __SQLExecDirect(pm->stmts[1],
+                                  statement_text,
+                                  text_length);
+        return res;
 }
